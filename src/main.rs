@@ -1,48 +1,51 @@
-use thiserror::Error;
-use winit::{
-    error::OsError,
-    event::{ElementState, KeyboardInput, VirtualKeyCode},
-    event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+use iced::{
+    pure::{column, container, image, Element, Sandbox},
+    Settings,
 };
+use thiserror::Error;
+
+// ----------------- Iced
+pub struct ImageView {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Message {}
+
+impl Sandbox for ImageView {
+    type Message = Message;
+
+    fn new() -> Self {
+        ImageView {}
+    }
+
+    fn title(&self) -> String {
+        String::from("ImageView 123")
+    }
+
+    fn update(&mut self, _message: Self::Message) {
+        todo!()
+    }
+
+    fn view(&self) -> iced::pure::Element<'_, Self::Message> {
+        let image: Element<Message> = image("img.jpg").into();
+
+        let content: Element<_> = column()
+            .max_width(540)
+            .spacing(20)
+            .padding(20)
+            .push(image)
+            .into();
+
+        container(content).into()
+    }
+}
 
 #[derive(Debug, Error)]
 enum ImgmgError {
-    #[error("Unable to create window.")]
-    WindowError(#[from] OsError),
+    // #[error("Unable to create window.")]
+    // WindowError(#[from] OsError),
 }
 
-fn main() -> std::result::Result<(), ImgmgError> {
+fn main() -> iced::Result {
     println!("Hello you, world!");
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_title("ImgMg")
-        .build(&event_loop)?;
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
-        match event {
-            winit::event::Event::WindowEvent { window_id, event } if window_id == window.id() => {
-                match event {
-                    winit::event::WindowEvent::Resized(_) => (),
-                    winit::event::WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                    winit::event::WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                state: ElementState::Pressed,
-                                virtual_keycode: Some(VirtualKeyCode::Escape),
-                                ..
-                            },
-                        ..
-                    } => *control_flow = ControlFlow::Exit,
-                    winit::event::WindowEvent::ScaleFactorChanged {
-                        scale_factor: _,
-                        new_inner_size: _,
-                    } => {}
-                    _ => {}
-                }
-            }
-            winit::event::Event::RedrawRequested(_) => {}
-            _ => {}
-        }
-    })
+    ImageView::run(Settings::default())
 }
