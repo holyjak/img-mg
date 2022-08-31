@@ -1,7 +1,12 @@
 use std::fmt::Debug;
 
 use anyhow::{self, Context};
-use iced::{executor, pure::Application, Command};
+use iced::{
+    alignment::{Horizontal, Vertical},
+    executor,
+    pure::Application,
+    Command,
+};
 #[allow(unused_imports)]
 use iced::{
     pure::{column, container, image, text, Element, Sandbox},
@@ -9,8 +14,7 @@ use iced::{
 };
 use iced_futures::futures::future;
 use iced_native;
-//use image::{io::Reader as ImageReader, DynamicImage};
-use image::{io::Reader as ImageReader, DynamicImage, GenericImageView}; // 'image' create re-exported from iced_wgpu
+use image::{io::Reader as ImageReader, DynamicImage};
 use thiserror::Error;
 
 // ----------------- Iced
@@ -24,18 +28,15 @@ pub struct MyImage {
 }
 impl MyImage {
     fn new(file_name: &str, raw_image: DynamicImage) -> Self {
-        println!(
-            "MyImage.new w {} h {}",
-            raw_image.width(),
-            raw_image.height()
-        );
+        // NOTE: image v. 0.24.3 lacks to_bgra8 and Dyn.Image itself has .width(), .height()
+        let bgra_img = raw_image.to_bgra8();
         MyImage {
             file_name: file_name.to_owned(),
-            size: (raw_image.width(), raw_image.height()),
+            size: (bgra_img.width(), bgra_img.height()),
             handle: ImageHandle::from_pixels(
-                raw_image.width(),
-                raw_image.height(),
-                raw_image.into_bytes(),
+                bgra_img.width(),
+                bgra_img.height(),
+                bgra_img.into_vec(),
             ),
         }
     }
@@ -89,39 +90,17 @@ impl Application for ImageView {
         match message {
             Message::Loaded(img_result) => self.image = img_result.ok(),
         };
-        println!(".update: image is Some: {}", self.image.is_some());
         Command::none()
     }
 
     fn view(&self) -> iced::pure::Element<'_, Self::Message> {
         println!("View rendering... Has image: {}", self.image.is_some());
         let content: Element<Message> = if let Some(img) = &self.image {
-            //
-            // DynamicImage::from_decoder(jpeg::JpegDecoder::new(BufReader::new(File::open(path).unwrap())).unwrap()),
-            // => image.to_bgra8()
-            let img2 = ImageReader::open("img.jpg")
-                .unwrap()
-                .decode()
-                .unwrap()
-                .to_bgra8();
-            //img2.to_luma8()
-            image(ImageHandle::from_pixels(
-                img2.width(),
-                img2.height(),
-                img2.into_vec(),
-            )) // BROKEN
-            // image(ImageHandle::from_pixels(
-            //     img2.width(),
-            //     img2.height(),
-            //     img2.into_bytes(),
-            // )) // BROKEN
-            //image("img.jpg") // WORKS
-            //image(load_image("img.jpg").unwrap().handle) // BROKEN
-            //image(img.handle.clone()) // BROKEN
-            .width(Length::Fill)
-            // .center_x() - N/A ?!
-            //.content_fit(iced::ContentFit::Fill)
-            .into()
+            image(img.handle.clone())
+                .width(Length::Fill)
+                // .center_x() - N/A ?!
+                //.content_fit(iced::ContentFit::Fill)
+                .into()
 
             // let content: Element<_> = column()
             //     .max_width(540)
@@ -130,7 +109,12 @@ impl Application for ImageView {
             //     .push(image)
             //     .into();
         } else {
-            text("Image not loaded yet / failed").into()
+            text("Image not loaded yet / failed")
+                // .horizontal_alignment(Horizontal::Center) // has no effect ?!
+                // .vertical_alignment(Vertical::Center)
+                .size(30)
+                .color([1., 0., 0.])
+                .into()
         };
 
         container(content)
@@ -140,8 +124,7 @@ impl Application for ImageView {
     }
 
     fn background_color(&self) -> Color {
-        Color::BLACK
-        //Color::from([0.5, 0.5, 0.5])
+        Color::from([0.5, 0.5, 0.5])
     }
 
     type Executor = executor::Default;
