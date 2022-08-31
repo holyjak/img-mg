@@ -6,7 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-iced = {version = "0.4.2", features = ["pure", "image"]}
-image = "0.24.3"
+anyhow = { version = "1.0.62", features = ["backtrace"] }
+iced = {version = "0.4.2", features = ["pure", "image", "debug"]}
+iced_futures = "0.4.1"
+iced_native = "0.5.1"
+image = "0.23" # must use same version as iced_wgpu
 thiserror = "1.0.32"
 winit = "0.27.2"
