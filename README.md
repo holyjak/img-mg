@@ -6,6 +6,7 @@ My project to learn Rust - an image manager GUI.
 - [ ] Make the image maximized wrt. screen size
 - [ ] Display all images in a folder in a grid of thumbnails (of customizable size)
 - [ ] View a selected image in max size
+  * Problem: Iced does not support multiple windows iced-rs/iced#27 (as does not winit on mac or windows) => would need multiple processes => memory sharing :'(
 - [ ] View multiple images, for visual comparison (and selection)
 - [ ] Operations: Create sub-folder; rm, mv, rename image
   - [ ] Persistent selection of multiple images + batch operations
