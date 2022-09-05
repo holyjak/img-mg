@@ -162,17 +162,17 @@ enum ImgmgError {
     // WindowError(#[from] OsError),
 }
 
-type Rectangle = (u32, u32);
+// type Rectangle = (u32, u32);
 
-fn maybe_scale(image_size: &Rectangle, monitor_size: &Rectangle) -> Rectangle {
-    let oversize_factor = f32::max(
-        f32::max(image_size.0 as f32 / monitor_size.0 as f32, 1.0),
-        f32::max(image_size.1 as f32 / monitor_size.1 as f32, 1.0),
-    );
-    PhysicalSize::<u32>::from(image_size.clone())
-        .to_logical::<u32>(1.0 / oversize_factor as f64)
-        .into()
-}
+// fn maybe_scale(image_size: &Rectangle, monitor_size: &Rectangle) -> Rectangle {
+//     let oversize_factor = f32::max(
+//         f32::max(image_size.0 as f32 / monitor_size.0 as f32, 1.0),
+//         f32::max(image_size.1 as f32 / monitor_size.1 as f32, 1.0),
+//     );
+//     PhysicalSize::<u32>::from(image_size.clone())
+//         .to_logical::<u32>(1.0 / oversize_factor as f64)
+//         .into()
+// }
 
 fn main() -> anyhow::Result<()> {
     // PhysicalSize { width: 1920, height: 1080 }
