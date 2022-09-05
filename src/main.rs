@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, time::Instant};
 
 use anyhow::{self, Context};
 use iced::{
@@ -16,6 +16,7 @@ use iced_futures::futures::future;
 use iced_native;
 use image::{io::Reader as ImageReader, DynamicImage};
 use thiserror::Error;
+use winit::{dpi::PhysicalSize, event_loop::EventLoop};
 
 // ----------------- Iced
 type ImageHandle = iced_native::image::Handle;
@@ -27,10 +28,12 @@ pub struct MyImage {
     handle: ImageHandle,
 }
 impl MyImage {
+    // timing: debug 0.5s, rel 10ms
     fn new(file_name: &str, raw_image: DynamicImage) -> Self {
         // NOTE: image v. 0.24.3 lacks to_bgra8 and Dyn.Image itself has .width(), .height()
+        let start = Instant::now();
         let bgra_img = raw_image.to_bgra8();
-        MyImage {
+        let res = MyImage {
             file_name: file_name.to_owned(),
             size: (bgra_img.width(), bgra_img.height()),
             handle: ImageHandle::from_pixels(
@@ -38,7 +41,9 @@ impl MyImage {
                 bgra_img.height(),
                 bgra_img.into_vec(),
             ),
-        }
+        };
+        println!("MyImage.new {:?}", start.elapsed());
+        res
     }
 }
 #[derive(Default)]
@@ -61,17 +66,21 @@ impl Debug for Message {
 #[derive(Error, Debug, Clone)]
 pub enum ImgMgError {}
 
+// timing: debug 1s, rel. 50ms
 fn load_image(file: &str) -> anyhow::Result<MyImage> {
+    let start = Instant::now();
     let raw_image = ImageReader::open(file.clone())
         .with_context(|| format!("Failed to open image {}", file))?
         .decode()
         .with_context(|| format!("Failed to decode image {}", file))?;
+    println!("load_image {:?}", start.elapsed());
 
     Ok(MyImage::new(file, raw_image))
 }
 
 pub struct Flags {
     img: MyImage,
+    //monitor_size: (u32, u32),
 }
 
 impl Application for ImageView {
@@ -88,7 +97,15 @@ impl Application for ImageView {
 
     fn update(&mut self, message: Self::Message) -> iced::Command<Message> {
         match message {
-            Message::Loaded(img_result) => self.image = img_result.ok(),
+            Message::Loaded(img_result) => {
+                self.image = img_result.ok();
+                // if let Some(img) = &self.image {
+                //     iced::window::resize(img.size.0, img.size.1)
+                //     // there is also ::move_to
+                // } else {
+                //     Command::none()
+                // }
+            }
         };
         Command::none()
     }
@@ -145,15 +162,36 @@ enum ImgmgError {
     // WindowError(#[from] OsError),
 }
 
+type Rectangle = (u32, u32);
+
+fn maybe_scale(image_size: &Rectangle, monitor_size: &Rectangle) -> Rectangle {
+    let oversize_factor = f32::max(
+        f32::max(image_size.0 as f32 / monitor_size.0 as f32, 1.0),
+        f32::max(image_size.1 as f32 / monitor_size.1 as f32, 1.0),
+    );
+    PhysicalSize::<u32>::from(image_size.clone())
+        .to_logical::<u32>(1.0 / oversize_factor as f64)
+        .into()
+}
+
 fn main() -> anyhow::Result<()> {
+    // PhysicalSize { width: 1920, height: 1080 }
+    // let monitor_size = EventLoop::new()
+    //     .primary_monitor()
+    //     .map(|m| m.size())
+    //     .unwrap_or((1024, 768).into());
+    // FIXME: Find display size. Can't create EventLoop for that b/c there must be 1/app
     let img = load_image("img.jpg")?;
     println!("Hello you, world!");
     ImageView::run(Settings {
         window: window::Settings {
-            size: img.size,
+            //size: maybe_scale(&img.size, &monitor_size.into()),
             ..Default::default()
         },
-        ..Settings::with_flags(Flags { img })
+        ..Settings::with_flags(Flags {
+            img,
+            //monitor_size: (1024, 768), //monitor_size.into(),
+        })
     })?;
     Ok(())
 }
