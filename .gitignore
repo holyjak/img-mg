@@ -1,3 +1,6 @@
 /target
 img.jpg
 Pictures
+.clj-kondo/.cache/
+.lsp/.cache/
+.portal/

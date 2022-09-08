@@ -3,8 +3,8 @@ My project to learn Rust - an image manager GUI.
 # Roadmap
 
 - [x] Display all images in a folder in a grid of thumbnails (of customizable size)
-  - [ ] Performance: Don't waste time rendering what is off viewport
-  - [ ] Scrollbar
+  - [x] Performance: Don't waste time rendering what is off viewport
+  - [x] Scrollbar
   - [ ] Pre-render more images as the user is scrolling (start w/ an empty frame / loading icon - eg. `@refresh`) & consider garbage collecting those off screen
 - [ ] Display an image
 - [ ] Make the image maximized wrt. screen size
@@ -27,6 +27,8 @@ My project to learn Rust - an image manager GUI.
 ### FLTK resources
 
 **Flex** - see screenshots in https://github.com/osen/FL_Flex and Rust code in https://github.com/fltk-rs/fltk-flex/
+
+* http://seriss.com/people/erco/fltk/#ScrollableImage
 
 **Flow** - a new, rules based layout manager, somehow similar to css flexbox, 
 see https://github.com/fltk-rs/fltk-flow and especially https://github.com/osen/Fl_Flow

@@ -108,6 +108,46 @@ fn add_img_rows(parent: &mut group::Flex, state: &mut State) -> anyhow::Result<(
     Ok(())
 }
 
+#[derive(Clone, Default, Debug)]
+struct ScrollState {
+    scrolling: bool,
+    scroll_pos: i32,
+}
+
+fn tick(
+    scroll: group::Scroll,
+    handle: app::TimeoutHandle,
+    scroll_state_ptr: Arc<Mutex<ScrollState>>,
+) {
+    let mut scroll_state = scroll_state_ptr.lock().unwrap();
+    let changed = scroll_state.scroll_pos != scroll.yposition();
+    match scroll_state.deref_mut() {
+        ScrollState {
+            scrolling: false, ..
+        } if !changed => { /* no change */ }
+        ScrollState {
+            scrolling: false, ..
+        } if changed => {
+            println!("Scrolling started... ");
+            scroll_state.scroll_pos = scroll.yposition();
+            scroll_state.scrolling = true;
+        }
+        ScrollState {
+            scrolling: true, ..
+        } if !changed => {
+            println!("Scrolling stopped => render!");
+            scroll_state.scrolling = false; /* FIXME Render imgs */
+        }
+        ScrollState {
+            scrolling: true, ..
+        } if changed => {
+            scroll_state.scroll_pos = scroll.yposition();
+        }
+        _ => panic!(),
+    }
+    app::repeat_timeout3(0.001, handle);
+}
+
 fn main() -> anyhow::Result<()> {
     let win_width = 640;
     let win_height = 480;
@@ -145,6 +185,13 @@ fn main() -> anyhow::Result<()> {
     add_img_rows(&mut col, &mut state)?;
     col.end();
     scroll.end();
+
+    {
+        let mut scroll_state = Arc::new(Mutex::new(ScrollState::default()));
+        app::add_timeout3(0.001, move |handle| {
+            tick(scroll.clone(), handle, scroll_state.clone()) // TODO Use an Arc<Mutex> instead??
+        });
+    }
 
     win.resizable(&col); // make the window resizable
     win.set_color(enums::Color::from_rgb(250, 250, 250));
