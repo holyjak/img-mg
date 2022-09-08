@@ -16,15 +16,20 @@ fn dir_images(dir_path: &str) -> anyhow::Result<Vec<PathBuf>> {
 }
 
 struct State {
-    thumb_margin: i32,
     thumb_size: i32,
     per_row: i32,
     image_paths: Option<Vec<PathBuf>>,
     row_height: i32,
     total_height: i32,
+    visible_rows: (i32, i32),
 }
 
-fn add_image(state: &State, parent: &mut group::Flex, image_path: &PathBuf) -> anyhow::Result<()> {
+fn add_image(
+    state: &State,
+    parent: &mut group::Flex,
+    image_path: &PathBuf,
+    is_visible: bool,
+) -> anyhow::Result<()> {
     let fname = image_path.file_name().unwrap().to_string_lossy();
     //let fname_no_ext = image_path.file_prefix().unwrap().to_string_lossy(); // Unstable 2022-09
     let fpath = image_path.to_string_lossy();
@@ -39,17 +44,19 @@ fn add_image(state: &State, parent: &mut group::Flex, image_path: &PathBuf) -> a
     frame.set_tooltip(fname.deref());
     frame.set_color(enums::Color::White);
 
-    frame.set_label("@refresh");
-    frame.set_label_size(50); /*
-                              let mut image = SharedImage::load(fpath.deref()).with_context({
-                                  let f = fpath.deref().to_owned();
-                                  || f
-                              })?;
-                              //image.scale(parent.width(), parent.height(), true, true); // OBS these can be 0
-                              image.scale(state.thumb_size, state.thumb_size, true, true); // TODO Rescale when window expands?
+    if is_visible {
+        frame.set_label(fname.deref());
+        let mut image = SharedImage::load(fpath.deref()).with_context({
+            let f = fpath.deref().to_owned();
+            || f
+        })?;
+        image.scale(state.thumb_size, state.thumb_size, true, true); // TODO Rescale when window expands?
 
-                              frame.set_image(Some(image)); // This shows no image: frame.set_image_scaled(Some(image));
-                               */
+        frame.set_image(Some(image)); // This shows no image: frame.set_image_scaled(Some(image));
+    } else {
+        frame.set_label("@refresh");
+        frame.set_label_size(50);
+    }
 
     Ok(())
 }
@@ -59,20 +66,28 @@ fn add_img_rows(parent: &mut group::Flex, state: &State) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    for chunk in &state
+    for (row_nr, chunk) in state
         .image_paths
         .as_ref()
         .unwrap()
         .iter()
         //.take(11) // FIXME
         .chunks(state.per_row as usize)
+        .into_iter()
+        .enumerate()
     {
         //group::Flex::debug(true);
+        let nr = row_nr as i32;
+        let is_visible = nr >= state.visible_rows.0 && nr <= state.visible_rows.1;
+        // println!(
+        //     "Rendering row nr {} vis: {} <> in {:?}",
+        //     row_nr, is_visible, state.visible_rows
+        // );
         let mut row = group::Flex::default().row();
         parent.set_size(&mut row, state.row_height);
         //parent.resizable(&row);
         for image_path in chunk {
-            add_image(state, &mut row, image_path)?;
+            add_image(state, &mut row, image_path, is_visible)?;
         }
         row.end();
     }
@@ -99,8 +114,9 @@ fn main() -> anyhow::Result<()> {
         per_row,
         row_height,
         total_height: nr_rows * row_height,
-        thumb_margin,
+        //thumb_margin,
         thumb_size,
+        visible_rows: (0, (win_height + (row_height - 1)) / row_height), // Update as we scroll...
     };
 
     let a = app::App::default().with_scheme(app::Scheme::Gtk);
