@@ -1,6 +1,11 @@
 use anyhow::Context;
-use fltk::{group::ScrollType, image::SharedImage, prelude::*, *};
-use std::{fs, ops::Deref, path::PathBuf};
+use fltk::{image::SharedImage, prelude::*, *};
+use std::{
+    fs,
+    ops::{Deref, DerefMut},
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 extern crate itertools;
 use itertools::Itertools;
 
@@ -22,6 +27,7 @@ struct State {
     row_height: i32,
     total_height: i32,
     visible_rows: (i32, i32),
+    img_frames: Vec<Arc<Mutex<frame::Frame>>>,
 }
 
 fn add_image(
@@ -29,39 +35,45 @@ fn add_image(
     parent: &mut group::Flex,
     image_path: &PathBuf,
     is_visible: bool,
-) -> anyhow::Result<()> {
-    let fname = image_path.file_name().unwrap().to_string_lossy();
-    //let fname_no_ext = image_path.file_prefix().unwrap().to_string_lossy(); // Unstable 2022-09
-    let fpath = image_path.to_string_lossy();
-
-    let mut frame = frame::Frame::default()
-        // TODO Label: hide ext. to save space
-        .with_label(fname.deref());
+) -> anyhow::Result<frame::Frame> {
+    let mut frame = frame::Frame::default();
     //parent.set_size(&mut frame, state.thumb_size + 100); // sets width b/c parent is row
     frame.set_frame(enums::FrameType::FlatBox);
     //frame.set_align(enums::Align::Wrap); // should wrap label but has 0 effect? Perhaps b/c no spaces in it???
     frame.set_align(enums::Align::Clip);
-    frame.set_tooltip(fname.deref());
     frame.set_color(enums::Color::White);
 
     if is_visible {
-        frame.set_label(fname.deref());
-        let mut image = SharedImage::load(fpath.deref()).with_context({
-            let f = fpath.deref().to_owned();
-            || f
-        })?;
-        image.scale(state.thumb_size, state.thumb_size, true, true); // TODO Rescale when window expands?
-
-        frame.set_image(Some(image)); // This shows no image: frame.set_image_scaled(Some(image));
+        set_image(state, &mut frame, image_path)?;
     } else {
         frame.set_label("@refresh");
         frame.set_label_size(50);
     }
 
+    Ok(frame)
+}
+
+fn set_image(state: &State, frame: &mut frame::Frame, image_path: &PathBuf) -> anyhow::Result<()> {
+    let fname = image_path.file_name().unwrap().to_string_lossy();
+    //let fname_no_ext = image_path.file_prefix().unwrap().to_string_lossy(); // Unstable on rustc 1.63.0, 2022-09
+    let fpath = image_path.to_string_lossy();
+
+    // TODO Label: hide ext. to save space
+    frame.set_label(fname.deref());
+    frame.set_label_size(14);
+    frame.set_tooltip(fname.deref());
+    let mut image = SharedImage::load(fpath.deref()).with_context({
+        let f = fpath.deref().to_owned();
+        || f
+    })?;
+    image.scale(state.thumb_size, state.thumb_size, true, true); // TODO Rescale when window expands?
+
+    frame.set_image(Some(image)); // This shows no image: frame.set_image_scaled(Some(image));
+
     Ok(())
 }
 
-fn add_img_rows(parent: &mut group::Flex, state: &State) -> anyhow::Result<()> {
+fn add_img_rows(parent: &mut group::Flex, state: &mut State) -> anyhow::Result<()> {
     if state.image_paths.is_none() {
         return Ok(());
     }
@@ -71,7 +83,7 @@ fn add_img_rows(parent: &mut group::Flex, state: &State) -> anyhow::Result<()> {
         .as_ref()
         .unwrap()
         .iter()
-        //.take(11) // FIXME
+        .take(15) // FIXME
         .chunks(state.per_row as usize)
         .into_iter()
         .enumerate()
@@ -87,7 +99,8 @@ fn add_img_rows(parent: &mut group::Flex, state: &State) -> anyhow::Result<()> {
         parent.set_size(&mut row, state.row_height);
         //parent.resizable(&row);
         for image_path in chunk {
-            add_image(state, &mut row, image_path, is_visible)?;
+            let f = add_image(state, &mut row, image_path, is_visible)?;
+            state.img_frames.push(Arc::new(Mutex::new(f)));
         }
         row.end();
     }
@@ -109,7 +122,7 @@ fn main() -> anyhow::Result<()> {
 
     let nr_rows = (img_cnt + (per_row - 1)) / per_row; // rounded up
 
-    let state = State {
+    let mut state = State {
         image_paths,
         per_row,
         row_height,
@@ -117,6 +130,7 @@ fn main() -> anyhow::Result<()> {
         //thumb_margin,
         thumb_size,
         visible_rows: (0, (win_height + (row_height - 1)) / row_height), // Update as we scroll...
+        img_frames: vec![],
     };
 
     let a = app::App::default().with_scheme(app::Scheme::Gtk);
@@ -128,7 +142,7 @@ fn main() -> anyhow::Result<()> {
     scroll.set_type(group::ScrollType::Vertical);
     // NOTE We must manually set col.height to > win_h for scrollbar to appear
     let mut col = group::Flex::new(0, 0, win_width, state.total_height, None).column();
-    add_img_rows(&mut col, &state)?;
+    add_img_rows(&mut col, &mut state)?;
     col.end();
     scroll.end();
 
@@ -137,6 +151,27 @@ fn main() -> anyhow::Result<()> {
     win.end();
     win.show();
     win.size_range(600, 400, 0, 0);
+
+    // FIXME rm DEMO code - ex. of mutating a displayed image
+    state
+        .img_frames
+        .last()
+        .unwrap()
+        .lock()
+        .and_then(|mut g| {
+            let path = PathBuf::from("img.jpg");
+            let mut frame: &mut frame::Frame = g.deref_mut();
+            set_image(&state, frame, &path).unwrap();
+            println!("Label updated to: {}", g.label());
+            //g.redraw();
+            //g.parent().unwrap().redraw();
+            //g.parent().unwrap().parent().unwrap().redraw();
+            Ok(())
+        })
+        .unwrap();
+    // last_frame.last_frame.set_label("changed");
+
+    // BLOCK UNTIL CLOSED:
     a.run().unwrap();
     Ok(())
 }
