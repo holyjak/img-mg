@@ -1,5 +1,5 @@
 use anyhow::Context;
-use fltk::{image::SharedImage, prelude::*, *};
+use fltk::{group::ScrollType, image::SharedImage, prelude::*, *};
 use std::{fs, ops::Deref, path::PathBuf};
 extern crate itertools;
 use itertools::Itertools;
@@ -20,31 +20,37 @@ struct State {
     thumb_size: i32,
     per_row: i32,
     image_paths: Option<Vec<PathBuf>>,
+    row_height: i32,
+    total_height: i32,
 }
 
-fn main() -> anyhow::Result<()> {
-    let win_width = 640;
-    let win_height = 480;
-    let thumb_size = 100;
-    let per_row = win_width / (thumb_size + 10); // TODO Include gaps, decorations, ...
-    let state = State {
-        thumb_margin: 10,
-        thumb_size,
-        per_row,
-        image_paths: dir_images("./Pictures/mobil/2022/08").ok(),
-    };
+fn add_image(state: &State, parent: &mut group::Flex, image_path: &PathBuf) -> anyhow::Result<()> {
+    let fname = image_path.file_name().unwrap().to_string_lossy();
+    //let fname_no_ext = image_path.file_prefix().unwrap().to_string_lossy(); // Unstable 2022-09
+    let fpath = image_path.to_string_lossy();
 
-    let a = app::App::default().with_scheme(app::Scheme::Gtk);
-    let mut win = window::Window::default().with_size(win_width, win_height);
-    let mut col = group::Flex::default_fill().column();
-    add_img_rows(&mut col, &state)?;
-    col.end();
-    win.resizable(&col);
-    win.set_color(enums::Color::from_rgb(250, 250, 250));
-    win.end();
-    win.show();
-    win.size_range(600, 400, 0, 0);
-    a.run().unwrap();
+    let mut frame = frame::Frame::default()
+        // TODO Label: hide ext. to save space
+        .with_label(fname.deref());
+    //parent.set_size(&mut frame, state.thumb_size + 100); // sets width b/c parent is row
+    frame.set_frame(enums::FrameType::FlatBox);
+    //frame.set_align(enums::Align::Wrap); // should wrap label but has 0 effect? Perhaps b/c no spaces in it???
+    frame.set_align(enums::Align::Clip);
+    frame.set_tooltip(fname.deref());
+    frame.set_color(enums::Color::White);
+
+    frame.set_label("@refresh");
+    frame.set_label_size(50); /*
+                              let mut image = SharedImage::load(fpath.deref()).with_context({
+                                  let f = fpath.deref().to_owned();
+                                  || f
+                              })?;
+                              //image.scale(parent.width(), parent.height(), true, true); // OBS these can be 0
+                              image.scale(state.thumb_size, state.thumb_size, true, true); // TODO Rescale when window expands?
+
+                              frame.set_image(Some(image)); // This shows no image: frame.set_image_scaled(Some(image));
+                               */
+
     Ok(())
 }
 
@@ -53,25 +59,17 @@ fn add_img_rows(parent: &mut group::Flex, state: &State) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let img_cnt = state.image_paths.as_ref().unwrap().len() as i32;
-    let nr_rows = img_cnt / state.per_row;
-
-    println!(
-        "img_cnt {}, rows {}, per row: {}",
-        img_cnt, nr_rows, state.per_row
-    );
-
     for chunk in &state
         .image_paths
         .as_ref()
         .unwrap()
         .iter()
-        .take(60) // FIXME
+        //.take(11) // FIXME
         .chunks(state.per_row as usize)
     {
         //group::Flex::debug(true);
         let mut row = group::Flex::default().row();
-        parent.set_size(&mut row, state.thumb_size + 2 * state.thumb_margin);
+        parent.set_size(&mut row, state.row_height);
         //parent.resizable(&row);
         for image_path in chunk {
             add_image(state, &mut row, image_path)?;
@@ -82,33 +80,47 @@ fn add_img_rows(parent: &mut group::Flex, state: &State) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn add_image(state: &State, parent: &mut group::Flex, image_path: &PathBuf) -> anyhow::Result<()> {
-    let fname = image_path.file_name().unwrap().to_string_lossy();
-    //let fname_no_ext = image_path.file_prefix().unwrap().to_string_lossy(); // Unstable 2022-09
-    let fpath = image_path.to_string_lossy();
+fn main() -> anyhow::Result<()> {
+    let win_width = 640;
+    let win_height = 480;
+    let thumb_size = 200;
+    let thumb_margin = 10;
+    let thumb_container_size = thumb_size + thumb_margin;
+    let per_row = win_width / thumb_container_size; // TODO Include gaps, decorations, ...
+    let row_height = thumb_container_size + 10; // some extra space, just in case...
 
-    let mut frame = frame::Frame::default()
-        // .with_size( // No effect, likely because flow overrides it?
-        //     state.thumb_size + state.thumb_margin,
-        //     state.thumb_size + state.thumb_margin,
-        // )
-        // TODO Label: hide ext. to save space
-        .with_label(fname.deref());
-    //parent.set_size(&mut frame, state.thumb_size + 100); // sets width b/c parent is row
-    frame.set_frame(enums::FrameType::FlatBox);
-    //frame.set_align(enums::Align::Wrap); // should wrap label but has 0 effect? Perhaps b/c no spaces in it???
-    frame.set_align(enums::Align::Clip);
-    frame.set_tooltip(fname.deref());
-    frame.set_color(enums::Color::White);
+    let image_paths = dir_images("./Pictures/mobil/2022/08").ok();
+    let img_cnt = image_paths.as_ref().map_or(0, |v| v.len()) as i32;
 
-    let mut image = SharedImage::load(fpath.deref()).with_context({
-        let f = fpath.deref().to_owned();
-        || f
-    })?;
-    //image.scale(parent.width(), parent.height(), true, true); // OBS these can be 0
-    image.scale(state.thumb_size, state.thumb_size, true, true); // TODO Rescale when window expands?
+    let nr_rows = (img_cnt + (per_row - 1)) / per_row; // rounded up
 
-    frame.set_image(Some(image)); // This shows no image: frame.set_image_scaled(Some(image));
+    let state = State {
+        image_paths,
+        per_row,
+        row_height,
+        total_height: nr_rows * row_height,
+        thumb_margin,
+        thumb_size,
+    };
 
+    let a = app::App::default().with_scheme(app::Scheme::Gtk);
+    let mut win = window::Window::default().with_size(win_width, win_height);
+
+    let mut scroll = group::Scroll::default_fill(); //new(0, 0, win_width, win_height, None);
+                                                    // .with_pos(0, 0)
+                                                    // .with_size(win_width, win_height);
+    scroll.set_type(group::ScrollType::Vertical);
+    // NOTE We must manually set col.height to > win_h for scrollbar to appear
+    let mut col = group::Flex::new(0, 0, win_width, state.total_height, None).column();
+    add_img_rows(&mut col, &state)?;
+    col.end();
+    scroll.end();
+
+    win.resizable(&col); // make the window resizable
+    win.set_color(enums::Color::from_rgb(250, 250, 250));
+    win.end();
+    win.show();
+    win.size_range(600, 400, 0, 0);
+    a.run().unwrap();
     Ok(())
 }
