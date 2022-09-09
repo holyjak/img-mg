@@ -28,6 +28,7 @@ struct State {
     scroll_pos: i32,
     win_size: (i32, i32),
 
+    nr_images: i32, // added to simpify testing
     image_paths: Option<Vec<PathBuf>>,
     img_frames: Vec<Arc<Mutex<frame::Frame>>>,
 }
@@ -39,12 +40,19 @@ impl State {
             thumb_margin,
             scroll_pos: 0,
             win_size,
+            nr_images: 0,
             image_paths: Option::None,
             img_frames: vec![],
         }
     }
     fn with_image_paths(mut self, image_paths: Option<Vec<PathBuf>>) -> State {
+        self.nr_images = State::count_these_images(&image_paths);
         self.image_paths = image_paths;
+        self
+    }
+    #[cfg(test)]
+    fn testing_with_nr_images(mut self, nr_images: i32) -> State {
+        self.nr_images = nr_images;
         self
     }
     fn _rows_in_view(&self) -> i32 {
@@ -52,23 +60,25 @@ impl State {
     }
     fn calc_visible_rows(&self) -> (i32, i32) {
         let top_y = self.scroll_pos;
-        let skipped_rows = (top_y - (self.row_height() - 1)) / self.row_height();
+        let skipped_rows = top_y / self.row_height();
 
         let top_visible_row = skipped_rows; // b/c 0-based
-        let bottom_visible_row = top_visible_row + self._rows_in_view() - 1;
+        let bottom_visible_row = top_visible_row + self._rows_in_view(); // not -1 b/c we want extra row at bottom
 
         (top_visible_row, bottom_visible_row)
     }
     fn calc_visible(&self) -> (i32, i32) {
         let (top_visible_row, bottom_visible_row) = self.calc_visible_rows();
 
-        let first_visible_image = top_visible_row * self.per_row(); // 0-based
-        let last_visible_image = first_visible_image + (self._rows_in_view() * self.per_row() - 1);
+        let nr_visible_rows = bottom_visible_row - top_visible_row + 1;
 
-        println!(
-            "calc_visible: rows {} -> {}, imgs {} -> {}",
-            top_visible_row, bottom_visible_row, first_visible_image, last_visible_image
-        );
+        let first_visible_image = top_visible_row * self.per_row(); // 0-based
+        let last_visible_image = first_visible_image + (nr_visible_rows * self.per_row() - 1);
+
+        // println!(
+        //     "calc_visible: rows {} -> {}, imgs {} -> {}",
+        //     top_visible_row, bottom_visible_row, first_visible_image, last_visible_image
+        // );
 
         (first_visible_image, last_visible_image)
     }
@@ -83,7 +93,7 @@ impl State {
     }
 
     fn count_images(&self) -> i32 {
-        Self::count_these_images(&self.image_paths)
+        self.nr_images
     }
     fn count_these_images(image_paths: &Option<Vec<PathBuf>>) -> i32 {
         image_paths.as_ref().map_or(0, |v| v.len()) as i32
@@ -337,19 +347,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn calc_visible1() {
-        // calc_visible(
-        //     State {
-        //         thumb_size: 10,
-        //         per_row: todo!(),
-        //         image_paths: Option::None,
-        //         row_height: todo!(),
-        //         total_height: todo!(),
-        //         visible_rows: todo!(),
-        //         img_frames: todo!(),
-        //         win_size: todo!(),
-        //     },
-        //     0,
-        // );
+    fn calc_visible() {
+        let mut state = State::new((30, 20), 10, 0).testing_with_nr_images(3 * (2 + 1 + 1));
+        // Visible rows are the whole window (2) + 1 extra => 0 .. 2
+        assert_eq!(state._rows_in_view(), 2);
+        assert_eq!(
+            state.calc_visible_rows(),
+            (0, 1 + 1),
+            "Visible rows are the whole window (2) + 1 extra => rows 0 .. 2"
+        );
+        assert_eq!(
+            state.calc_visible(),
+            (0, 3 * 3 - 1),
+            "3 visible rows à 3 img => 9 images, namely 0 .. 8"
+        );
+
+        // As long as even 1px is visible of the top row, it is still "visible":
+        state.scroll_pos = 1; // > 0
+        assert_eq!(state.calc_visible_rows(), (0, 2)); // unchanged
+        state.scroll_pos = 9; // row_height - 1
+        assert_eq!(state.calc_visible_rows(), (0, 2)); // unchanged
+
+        // When it fully scrolls out of view, the next one is visible:
+        state.scroll_pos = 10; // row_height
+                               // ???? assert_eq!(state.calc_visible_rows(), (0 + 1, 2 + 1)); // inc by 1
+        assert_eq!(state.calc_visible_rows(), (0 + 1, 2 + 1)); // inc by 1
+        state.scroll_pos = 11; // row_height + 1
     }
 }
