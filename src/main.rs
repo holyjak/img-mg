@@ -20,14 +20,77 @@ fn dir_images(dir_path: &str) -> anyhow::Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
+#[derive(Debug)]
 struct State {
     thumb_size: i32,
-    per_row: i32,
+    thumb_margin: i32,
+
+    scroll_pos: i32,
+    win_size: (i32, i32),
+
     image_paths: Option<Vec<PathBuf>>,
-    row_height: i32,
-    total_height: i32,
-    visible_rows: (i32, i32),
     img_frames: Vec<Arc<Mutex<frame::Frame>>>,
+}
+
+impl State {
+    fn new(win_size: (i32, i32), thumb_size: i32, thumb_margin: i32) -> Self {
+        State {
+            thumb_size,
+            thumb_margin,
+            scroll_pos: 0,
+            win_size,
+            image_paths: Option::None,
+            img_frames: vec![],
+        }
+    }
+    fn with_image_paths(mut self, image_paths: Option<Vec<PathBuf>>) -> State {
+        self.image_paths = image_paths;
+        self
+    }
+    fn _rows_in_view(&self) -> i32 {
+        (self.win_size.1 + (self.row_height() - 1)) / self.row_height()
+    }
+    fn calc_visible_rows(&self) -> (i32, i32) {
+        let top_y = self.scroll_pos;
+        let skipped_rows = (top_y - (self.row_height() - 1)) / self.row_height();
+
+        let top_visible_row = skipped_rows; // b/c 0-based
+        let bottom_visible_row = top_visible_row + self._rows_in_view() - 1;
+
+        (top_visible_row, bottom_visible_row)
+    }
+    fn calc_visible(&self) -> (i32, i32) {
+        let (top_visible_row, bottom_visible_row) = self.calc_visible_rows();
+
+        let first_visible_image = top_visible_row * self.per_row(); // 0-based
+        let last_visible_image = first_visible_image + (self._rows_in_view() * self.per_row() - 1);
+
+        println!(
+            "calc_visible: rows {} -> {}, imgs {} -> {}",
+            top_visible_row, bottom_visible_row, first_visible_image, last_visible_image
+        );
+
+        (first_visible_image, last_visible_image)
+    }
+    fn total_height(&self) -> i32 {
+        self.count_rows() * self.row_height()
+    }
+    fn per_row(&self) -> i32 {
+        self.win_size.0 / (self.thumb_size + self.thumb_margin)
+    }
+    fn row_height(&self) -> i32 {
+        self.thumb_size + 2 * self.thumb_margin
+    }
+
+    fn count_images(&self) -> i32 {
+        Self::count_these_images(&self.image_paths)
+    }
+    fn count_these_images(image_paths: &Option<Vec<PathBuf>>) -> i32 {
+        image_paths.as_ref().map_or(0, |v| v.len()) as i32
+    }
+    fn count_rows(&self) -> i32 {
+        (self.count_images() + (self.per_row() - 1)) / self.per_row()
+    }
 }
 
 fn add_image(
@@ -84,19 +147,20 @@ fn add_img_rows(parent: &mut group::Flex, state: &mut State) -> anyhow::Result<(
         .unwrap()
         .iter()
         //.take(15) // FIXME
-        .chunks(state.per_row as usize)
+        .chunks(state.per_row() as usize)
         .into_iter()
         .enumerate()
     {
+        let (first_row, last_row) = state.calc_visible_rows();
         //group::Flex::debug(true);
         let nr = row_nr as i32;
-        let is_visible = nr >= state.visible_rows.0 && nr <= state.visible_rows.1;
+        let is_visible = nr >= first_row && nr <= last_row;
         // println!(
         //     "Rendering row nr {} vis: {} <> in {:?}",
         //     row_nr, is_visible, state.visible_rows
         // );
         let mut row = group::Flex::default().row();
-        parent.set_size(&mut row, state.row_height);
+        parent.set_size(&mut row, state.row_height());
         //parent.resizable(&row);
         for image_path in chunk {
             let f = add_image(state, &mut row, image_path, is_visible)?;
@@ -181,27 +245,13 @@ fn main() -> anyhow::Result<()> {
     let win_height = 480;
     let thumb_size = 200;
     let thumb_margin = 10;
-    let thumb_container_size = thumb_size + thumb_margin;
-    let per_row = win_width / thumb_container_size; // TODO Include gaps, decorations, ...
-    let row_height = thumb_container_size + 10; // some extra space, just in case...
-
     let image_paths = dir_images("./Pictures/mobil/2022/08").ok();
-    let img_cnt = image_paths.as_ref().map_or(0, |v| v.len()) as i32;
-
-    let nr_rows = (img_cnt + (per_row - 1)) / per_row; // rounded up
+    let mut state =
+        State::new((win_width, win_height), thumb_size, thumb_margin).with_image_paths(image_paths);
 
     let (sender, receiver) = app::channel::<Message>();
 
-    let mut state = State {
-        image_paths,
-        per_row,
-        row_height,
-        total_height: nr_rows * row_height,
-        //thumb_margin,
-        thumb_size,
-        visible_rows: (0, (win_height + (row_height - 1)) / row_height), // Update as we scroll...
-        img_frames: vec![],
-    };
+    state.calc_visible(); // TODO rm
 
     let a = app::App::default().with_scheme(app::Scheme::Gtk);
     let mut win = window::Window::default().with_size(win_width, win_height);
@@ -211,13 +261,13 @@ fn main() -> anyhow::Result<()> {
                                                     // .with_size(win_width, win_height);
     scroll.set_type(group::ScrollType::Vertical);
     // NOTE We must manually set col.height to > win_h for scrollbar to appear
-    let mut col = group::Flex::new(0, 0, win_width, state.total_height, None).column();
+    let mut col = group::Flex::new(0, 0, win_width, state.total_height(), None).column();
     add_img_rows(&mut col, &mut state)?;
     col.end();
     scroll.end();
 
     {
-        let mut scroll_state = Arc::new(Mutex::new(ScrollState::default()));
+        let scroll_state = Arc::new(Mutex::new(ScrollState::default()));
         app::add_timeout3(0.001, move |handle| {
             tick(scroll.clone(), handle, scroll_state.clone(), sender.clone())
         });
@@ -253,10 +303,53 @@ fn main() -> anyhow::Result<()> {
         if let Some(msg) = receiver.recv() {
             match msg {
                 Message::RenderBelow(pos) => {
+                    state.scroll_pos = pos;
+                    state.calc_visible();
                     println!("TODO: Calculate rendering from ypos {}", pos);
                 }
             }
         }
     }
     Ok(())
+}
+
+// struct State {
+//     thumb_size: i32,
+//     per_row: i32,
+//     image_paths: Option<Vec<PathBuf>>,
+//     row_height: i32,
+//     total_height: i32,
+//     visible_rows: (i32, i32),
+//     img_frames: Vec<Arc<Mutex<frame::Frame>>>,
+// }
+
+// FIXME: BREAK OFF POINT IS TOO LATE
+// (row_height: 220)
+// Only when viewing rows 2+3 and a bit (ie 0+1 off screen) does vis. rows change:
+// ypos 432 => calc_visible: rows 0 -> 2, imgs 0 -> 8
+// ypos 448 => calc_visible: rows 1 -> 3, imgs 3 -> 11
+//       => top 2 rows hidden (2*220), 2.x more rows visible <=> `rows 1 -> 3` is off
+//       => ??? why not change at 221 ???
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn calc_visible1() {
+        // calc_visible(
+        //     State {
+        //         thumb_size: 10,
+        //         per_row: todo!(),
+        //         image_paths: Option::None,
+        //         row_height: todo!(),
+        //         total_height: todo!(),
+        //         visible_rows: todo!(),
+        //         img_frames: todo!(),
+        //         win_size: todo!(),
+        //     },
+        //     0,
+        // );
+    }
 }
