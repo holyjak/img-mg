@@ -83,7 +83,7 @@ fn add_img_rows(parent: &mut group::Flex, state: &mut State) -> anyhow::Result<(
         .as_ref()
         .unwrap()
         .iter()
-        .take(15) // FIXME
+        //.take(15) // FIXME
         .chunks(state.per_row as usize)
         .into_iter()
         .enumerate()
@@ -127,7 +127,7 @@ impl ScrollState {
             ScrollState {
                 scrolling: false, ..
             } if changed => {
-                println!("Scrolling started... ");
+                //println!("Scrolling started... ");
                 self.scroll_pos = current_scroll_position;
                 self.scrolling = true;
                 ScrollReaction::None
@@ -135,7 +135,7 @@ impl ScrollState {
             ScrollState {
                 scrolling: true, ..
             } if !changed => {
-                println!("Scrolling stopped => render!");
+                //println!("Scrolling stopped => render!");
                 self.scrolling = false;
                 ScrollReaction::Render(current_scroll_position)
             }
@@ -161,13 +161,19 @@ fn tick(
     scroll: group::Scroll,
     handle: app::TimeoutHandle,
     scroll_state_ptr: Arc<Mutex<ScrollState>>,
+    sender: app::Sender<Message>,
 ) {
     let mut scroll_state = scroll_state_ptr.lock().unwrap();
     match scroll_state.deref_mut().update(scroll.yposition()) {
-        ScrollReaction::Render(_) => println!("TODO Render images..."),
+        ScrollReaction::Render(pos) => sender.send(Message::RenderBelow(pos)),
         _ => (),
     }
     app::repeat_timeout3(0.002, handle);
+}
+
+#[derive(Clone, Debug)]
+enum Message {
+    RenderBelow(i32),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -183,6 +189,8 @@ fn main() -> anyhow::Result<()> {
     let img_cnt = image_paths.as_ref().map_or(0, |v| v.len()) as i32;
 
     let nr_rows = (img_cnt + (per_row - 1)) / per_row; // rounded up
+
+    let (sender, receiver) = app::channel::<Message>();
 
     let mut state = State {
         image_paths,
@@ -211,7 +219,7 @@ fn main() -> anyhow::Result<()> {
     {
         let mut scroll_state = Arc::new(Mutex::new(ScrollState::default()));
         app::add_timeout3(0.001, move |handle| {
-            tick(scroll.clone(), handle, scroll_state.clone()) // TODO Use an Arc<Mutex> instead??
+            tick(scroll.clone(), handle, scroll_state.clone(), sender.clone())
         });
     }
 
@@ -222,25 +230,33 @@ fn main() -> anyhow::Result<()> {
     win.size_range(600, 400, 0, 0);
 
     // FIXME rm DEMO code - ex. of mutating a displayed image
-    state
-        .img_frames
-        .last()
-        .unwrap()
-        .lock()
-        .and_then(|mut g| {
-            let path = PathBuf::from("img.jpg");
-            let mut frame: &mut frame::Frame = g.deref_mut();
-            set_image(&state, frame, &path).unwrap();
-            println!("Label updated to: {}", g.label());
-            //g.redraw();
-            //g.parent().unwrap().redraw();
-            //g.parent().unwrap().parent().unwrap().redraw();
-            Ok(())
-        })
-        .unwrap();
+    // state
+    //     .img_frames
+    //     .last()
+    //     .unwrap()
+    //     .lock()
+    //     .and_then(|mut g| {
+    //         let path = PathBuf::from("img.jpg");
+    //         let mut frame: &mut frame::Frame = g.deref_mut();
+    //         set_image(&state, frame, &path).unwrap();
+    //         println!("Label updated to: {}", g.label());
+    //         //g.redraw();
+    //         //g.parent().unwrap().redraw();
+    //         //g.parent().unwrap().parent().unwrap().redraw();
+    //         Ok(())
+    //     })
+    //     .unwrap();
     // last_frame.last_frame.set_label("changed");
 
     // BLOCK UNTIL CLOSED:
-    a.run().unwrap();
+    while a.wait() {
+        if let Some(msg) = receiver.recv() {
+            match msg {
+                Message::RenderBelow(pos) => {
+                    println!("TODO: Calculate rendering from ypos {}", pos);
+                }
+            }
+        }
+    }
     Ok(())
 }
