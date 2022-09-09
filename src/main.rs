@@ -113,39 +113,61 @@ struct ScrollState {
     scrolling: bool,
     scroll_pos: i32,
 }
+enum ScrollReaction {
+    None,
+    Render(i32),
+}
+impl ScrollState {
+    fn update(&mut self, current_scroll_position: i32) -> ScrollReaction {
+        let changed = self.scroll_pos != current_scroll_position;
+        match self {
+            ScrollState {
+                scrolling: false, ..
+            } if !changed => ScrollReaction::None,
+            ScrollState {
+                scrolling: false, ..
+            } if changed => {
+                println!("Scrolling started... ");
+                self.scroll_pos = current_scroll_position;
+                self.scrolling = true;
+                ScrollReaction::None
+            }
+            ScrollState {
+                scrolling: true, ..
+            } if !changed => {
+                println!("Scrolling stopped => render!");
+                self.scrolling = false;
+                ScrollReaction::Render(current_scroll_position)
+            }
+            ScrollState {
+                scrolling: true, ..
+            } if changed => {
+                self.scroll_pos = current_scroll_position;
+                ScrollReaction::None
+            }
+            _ => panic!(),
+        }
+    }
+}
 
+/**
+ * Check scroll position at regular intervals to detect scrolling happening.
+ *
+ * See https://groups.google.com/g/fltkgeneral/c/z7B7QT45cpk/m/eKZlaO4xCAAJ for
+ * an alternative solution that subclasses Fl_Scroll and overrides its
+ * scrollbar's callback to also perform an action upon scrolling.
+ */
 fn tick(
     scroll: group::Scroll,
     handle: app::TimeoutHandle,
     scroll_state_ptr: Arc<Mutex<ScrollState>>,
 ) {
     let mut scroll_state = scroll_state_ptr.lock().unwrap();
-    let changed = scroll_state.scroll_pos != scroll.yposition();
-    match scroll_state.deref_mut() {
-        ScrollState {
-            scrolling: false, ..
-        } if !changed => { /* no change */ }
-        ScrollState {
-            scrolling: false, ..
-        } if changed => {
-            println!("Scrolling started... ");
-            scroll_state.scroll_pos = scroll.yposition();
-            scroll_state.scrolling = true;
-        }
-        ScrollState {
-            scrolling: true, ..
-        } if !changed => {
-            println!("Scrolling stopped => render!");
-            scroll_state.scrolling = false; /* FIXME Render imgs */
-        }
-        ScrollState {
-            scrolling: true, ..
-        } if changed => {
-            scroll_state.scroll_pos = scroll.yposition();
-        }
-        _ => panic!(),
+    match scroll_state.deref_mut().update(scroll.yposition()) {
+        ScrollReaction::Render(_) => println!("TODO Render images..."),
+        _ => (),
     }
-    app::repeat_timeout3(0.001, handle);
+    app::repeat_timeout3(0.002, handle);
 }
 
 fn main() -> anyhow::Result<()> {
