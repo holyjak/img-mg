@@ -10,3 +10,4 @@ anyhow = { version = "1.0.62", features = ["backtrace"] }
 fltk = { version = "1.3.13", features = ["fltk-bundled"] } # TODO consider system-libjpeg, system-libpngimage = "0.23" # must use same version as iced_wgpu
 itertools = "0.10.3"
 thiserror = "1.0.32"
+tokio = { version = "1.21.0", features = ["full"] }

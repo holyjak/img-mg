@@ -21,7 +21,7 @@ fn dir_images(dir_path: &str) -> anyhow::Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct ImageDisplayCont {
     frame: Arc<Mutex<frame::Frame>>,
     image_path: PathBuf,
@@ -122,7 +122,6 @@ impl State {
 
 fn add_image(
     state: &State,
-    parent: &mut group::Flex,
     image_path: &PathBuf,
     is_visible: bool,
 ) -> anyhow::Result<frame::Frame> {
@@ -134,7 +133,7 @@ fn add_image(
     frame.set_color(enums::Color::White);
 
     if is_visible {
-        set_image(state, &mut frame, image_path)?;
+        set_image(&mut frame, image_path, state.thumb_size)?;
     } else {
         frame.set_label("@refresh");
         frame.set_label_size(50);
@@ -143,7 +142,11 @@ fn add_image(
     Ok(frame)
 }
 
-fn set_image(state: &State, frame: &mut frame::Frame, image_path: &PathBuf) -> anyhow::Result<()> {
+fn set_image(
+    frame: &mut frame::Frame,
+    image_path: &PathBuf,
+    thumb_size: i32,
+) -> anyhow::Result<()> {
     let fname = image_path.file_name().unwrap().to_string_lossy();
     //let fname_no_ext = image_path.file_prefix().unwrap().to_string_lossy(); // Unstable on rustc 1.63.0, 2022-09
     let fpath = image_path.to_string_lossy();
@@ -156,7 +159,7 @@ fn set_image(state: &State, frame: &mut frame::Frame, image_path: &PathBuf) -> a
         let f = fpath.deref().to_owned();
         || f
     })?;
-    image.scale(state.thumb_size, state.thumb_size, true, true); // TODO Rescale when window expands?
+    image.scale(thumb_size, thumb_size, true, true); // TODO Rescale when window expands?
 
     frame.set_image(Some(image)); // This shows no image: frame.set_image_scaled(Some(image));
 
@@ -189,7 +192,7 @@ fn add_img_rows(parent: &mut group::Flex, state: &mut State) -> anyhow::Result<(
         parent.set_size(&mut row, state.row_height());
         //parent.resizable(&row);
         for image_path in chunk {
-            let f = add_image(state, &mut row, image_path, is_visible)?;
+            let f = add_image(state, image_path, is_visible)?;
             state.img_frames.push(ImageDisplayCont {
                 frame: Arc::new(Mutex::new(f)),
                 image_path: image_path.clone(),
@@ -269,13 +272,17 @@ enum Message {
     RenderBelow(i32),
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let win_width = 640;
     let win_height = 480;
     let thumb_size = 200;
     let thumb_margin = 10;
     let image_paths = dir_images("./Pictures/mobil/2022/08")
-        .map(|x| x.into_iter().take(9).collect_vec()) // FIXME rm take
+        .map(|x| {
+            x.into_iter() /*.take(50)*/
+                .collect_vec()
+        }) // FIXME rm take
         .ok();
     let mut state =
         State::new((win_width, win_height), thumb_size, thumb_margin).with_image_paths(image_paths);
@@ -321,7 +328,7 @@ fn main() -> anyhow::Result<()> {
                     let (first_visible_image, last_visible_image) = state.calc_visible();
                     let imgs2show = &state.img_frames
                         [(first_visible_image as usize)..(last_visible_image as usize)];
-                    load_missing_images(&state, imgs2show);
+                    load_missing_images(&state, imgs2show).unwrap(); // TODO Handle errors better
                 }
             }
         }
@@ -330,26 +337,31 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn load_missing_images(state: &State, imgs2show: &[ImageDisplayCont]) -> anyhow::Result<()> {
+    let thumb_size = state.thumb_size;
     for img_cont in imgs2show {
-        let path = &img_cont.image_path;
-        img_cont
-            .frame
-            .lock()
-            .and_then(|mut frame| {
-                let frame = &mut frame.deref_mut();
-                if frame.image().is_none() {
-                    println!("Setting missing image for {}", path.display());
-                    set_image(&state, frame, &path).unwrap(); // TODO Handle err better
-                }
-                Ok(())
-            })
-            .map_err(|err| {
-                anyhow::anyhow!(
-                    "Lock on a frame for {} is poisoned: {}",
-                    path.display(),
-                    err
-                )
-            })?;
+        let img_cont2 = img_cont.clone();
+        tokio::spawn(async move {
+            let path = &img_cont2.image_path;
+            img_cont2
+                .frame
+                .lock()
+                .and_then(|mut frame| {
+                    let frame = &mut frame.deref_mut();
+                    if frame.image().is_none() {
+                        println!("Setting missing image for {}", path.display());
+                        set_image(frame, &path, thumb_size).unwrap(); // TODO Handle err better
+                    }
+                    Ok(())
+                })
+                .map_err(|err| {
+                    anyhow::anyhow!(
+                        "Lock on a frame for {} is poisoned: {}",
+                        path.display(),
+                        err
+                    )
+                })
+                .unwrap(); // FIXME unwrap not
+        });
     }
     Ok(())
 }

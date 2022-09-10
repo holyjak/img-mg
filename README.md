@@ -17,13 +17,14 @@ My project to learn Rust - an image manager GUI.
 - [ ] Operations: Create sub-folder; rm, mv, rename image, rotate
   - [ ] Persistent selection of multiple images + batch operations
 
+## FIXME
 
-# TODO
-
-* Handle secondary display
-  * What if window moved to another monitor after creation?
-* Image view operations - zoom, rotate, save, undo
-
+* The very last image never loaded => likely bug in calculation
+* As images being loaded, the UI seems to jum around, likely due to frame sizes changing (newly img + label)
+  * As loading starts, sometimes we set label but l. size has not applied yet
+  * Sometimes there seems a missing re-draw after the image is loaded (only the new label shows until I force redraw eg by scrolling a little) Could also be due to async
+  * Loading stars too early as I scroll, due to just a tiny pause => when I really am done scrolling, there is a huge backlog of loading going on ==>> add a dropping LIFO queue for the loading tasks
+  * Scrolling up - imgs BELOW current screen are loaded,  not the ones I stare at - sometimes
 # Notes
 
 ## Design
