@@ -1,6 +1,7 @@
 use anyhow::Context;
 use fltk::{image::SharedImage, prelude::*, *};
 use std::{
+    cmp::{max, min},
     fs,
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -65,25 +66,35 @@ impl State {
         (self.win_size.1 + (self.row_height() - 1)) / self.row_height()
     }
     fn calc_visible_rows(&self) -> (i32, i32) {
+        let last_row = max(self.count_rows() - 1, 0);
         let top_y = self.scroll_pos;
-        let skipped_rows = top_y / self.row_height();
+        let skipped_rows = min(top_y / self.row_height(), last_row);
 
         let top_visible_row = skipped_rows; // b/c 0-based
-        let bottom_visible_row = top_visible_row + self._rows_in_view(); // not -1 b/c we want extra row at bottom
+        let bottom_visible_row = min(top_visible_row + self._rows_in_view(), last_row); // not -1 b/c we want extra row at bottom
 
         (top_visible_row, bottom_visible_row)
     }
     fn calc_visible(&self) -> (i32, i32) {
+        let last_img = max(self.count_images() - 1, 0);
         let (top_visible_row, bottom_visible_row) = self.calc_visible_rows();
 
         let nr_visible_rows = bottom_visible_row - top_visible_row + 1;
 
-        let first_visible_image = top_visible_row * self.per_row(); // 0-based
-        let last_visible_image = first_visible_image + (nr_visible_rows * self.per_row() - 1);
+        let first_visible_image = min(top_visible_row * self.per_row(), last_img); // 0-based
+        let last_visible_image = min(
+            first_visible_image + (nr_visible_rows * self.per_row() - 1),
+            last_img,
+        );
 
         // println!(
-        //     "calc_visible: rows {} -> {}, imgs {} -> {}",
-        //     top_visible_row, bottom_visible_row, first_visible_image, last_visible_image
+        //     "calc_visible({}): rows {} -> {}, imgs {} -> {} (win height: {})",
+        //     self.scroll_pos,
+        //     top_visible_row,
+        //     bottom_visible_row,
+        //     first_visible_image,
+        //     last_visible_image,
+        //     self.win_size.1
         // );
 
         (first_visible_image, last_visible_image)
@@ -162,7 +173,6 @@ fn add_img_rows(parent: &mut group::Flex, state: &mut State) -> anyhow::Result<(
         .as_ref()
         .unwrap()
         .iter()
-        //.take(15) // FIXME
         .chunks(state.per_row() as usize)
         .into_iter()
         .enumerate()
@@ -264,7 +274,9 @@ fn main() -> anyhow::Result<()> {
     let win_height = 480;
     let thumb_size = 200;
     let thumb_margin = 10;
-    let image_paths = dir_images("./Pictures/mobil/2022/08").ok();
+    let image_paths = dir_images("./Pictures/mobil/2022/08")
+        .map(|x| x.into_iter().take(9).collect_vec()) // FIXME rm take
+        .ok();
     let mut state =
         State::new((win_width, win_height), thumb_size, thumb_margin).with_image_paths(image_paths);
 
@@ -273,7 +285,9 @@ fn main() -> anyhow::Result<()> {
     state.calc_visible(); // TODO rm
 
     let a = app::App::default().with_scheme(app::Scheme::Gtk);
-    let mut win = window::Window::default().with_size(win_width, win_height);
+    let mut win = window::Window::default()
+        .with_size(win_width, win_height)
+        .center_screen();
 
     let mut scroll = group::Scroll::default_fill(); //new(0, 0, win_width, win_height, None);
                                                     // .with_pos(0, 0)
@@ -346,7 +360,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn calc_visible() {
+    fn calc_visible_basics() {
         let mut state = State::new((30, 20), 10, 0).testing_with_nr_images(3 * (2 + 1 + 1));
         // Visible rows are the whole window (2) + 1 extra => 0 .. 2
         assert_eq!(state._rows_in_view(), 2);
@@ -372,5 +386,42 @@ mod tests {
                                // ???? assert_eq!(state.calc_visible_rows(), (0 + 1, 2 + 1)); // inc by 1
         assert_eq!(state.calc_visible_rows(), (0 + 1, 2 + 1)); // inc by 1
         state.scroll_pos = 11; // row_height + 1
+    }
+
+    #[test]
+    fn calc_visible_boundaries() {
+        {
+            let state_empty = State::new((30, 20), 10, 0).testing_with_nr_images(0);
+            // Visible rows are the whole window (2) + 1 extra => 0 .. 2
+            assert_eq!(state_empty._rows_in_view(), 2); // this only depends on thumb size...
+            assert_eq!(state_empty.calc_visible_rows(), (0, 0));
+            assert_eq!(state_empty.calc_visible(), (0, 0));
+        }
+
+        {
+            // with 1.3 rows of images only
+            let state_half_empty = State::new((30, 20), 10, 0).testing_with_nr_images(4);
+            assert_eq!(state_half_empty._rows_in_view(), 2);
+            assert_eq!(state_half_empty.calc_visible_rows(), (0, 1));
+            assert_eq!(state_half_empty.calc_visible(), (0, 3));
+        }
+
+        {
+            let mut state_window_full = State::new((30, 20), 10, 0).testing_with_nr_images(6);
+            assert_eq!(state_window_full.calc_visible_rows(), (0, 1));
+            assert_eq!(state_window_full.calc_visible(), (0, 5));
+            // The user increased the window size and scrolled down so ypos is below existing rows...
+            state_window_full.scroll_pos = 20 * 3;
+            assert_eq!(
+                state_window_full.calc_visible_rows(),
+                (1, 1),
+                "Stops at max rows"
+            );
+            assert_eq!(
+                state_window_full.calc_visible(),
+                (3, 5),
+                "Stops at max - images for the last row only"
+            );
+        }
     }
 }

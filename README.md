@@ -9,6 +9,7 @@ My project to learn Rust - an image manager GUI.
     - Make smoother
     - Do async so UI thread not blocked
     - Show that the images are being loaded
+- [ ] Resize the window => recalc. rows
 - [ ] Display an image
 - [ ] Make the image maximized wrt. screen size
 - [ ] View a selected image in max size
