@@ -5,7 +5,10 @@ My project to learn Rust - an image manager GUI.
 - [x] Display all images in a folder in a grid of thumbnails (of customizable size)
   - [x] Performance: Don't waste time rendering what is off viewport
   - [x] Scrollbar
-  - [ ] Pre-render more images as the user is scrolling (start w/ an empty frame / loading icon - eg. `@refresh`) & consider garbage collecting those off screen
+  - [x] (Pre-)render more images as the user is scrolling (start w/ an empty frame / loading icon - eg. `@refresh`) & consider garbage collecting those off screen
+    - Make smoother
+    - Do async so UI thread not blocked
+    - Show that the images are being loaded
 - [ ] Display an image
 - [ ] Make the image maximized wrt. screen size
 - [ ] View a selected image in max size

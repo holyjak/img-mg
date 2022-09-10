@@ -21,6 +21,12 @@ fn dir_images(dir_path: &str) -> anyhow::Result<Vec<PathBuf>> {
 }
 
 #[derive(Debug)]
+struct ImageDisplayCont {
+    frame: Arc<Mutex<frame::Frame>>,
+    image_path: PathBuf,
+}
+
+#[derive(Debug)]
 struct State {
     thumb_size: i32,
     thumb_margin: i32,
@@ -30,7 +36,7 @@ struct State {
 
     nr_images: i32, // added to simpify testing
     image_paths: Option<Vec<PathBuf>>,
-    img_frames: Vec<Arc<Mutex<frame::Frame>>>,
+    img_frames: Vec<ImageDisplayCont>,
 }
 
 impl State {
@@ -174,7 +180,10 @@ fn add_img_rows(parent: &mut group::Flex, state: &mut State) -> anyhow::Result<(
         //parent.resizable(&row);
         for image_path in chunk {
             let f = add_image(state, &mut row, image_path, is_visible)?;
-            state.img_frames.push(Arc::new(Mutex::new(f)));
+            state.img_frames.push(ImageDisplayCont {
+                frame: Arc::new(Mutex::new(f)),
+                image_path: image_path.clone(),
+            });
         }
         row.end();
     }
@@ -289,33 +298,16 @@ fn main() -> anyhow::Result<()> {
     win.show();
     win.size_range(600, 400, 0, 0);
 
-    // FIXME rm DEMO code - ex. of mutating a displayed image
-    // state
-    //     .img_frames
-    //     .last()
-    //     .unwrap()
-    //     .lock()
-    //     .and_then(|mut g| {
-    //         let path = PathBuf::from("img.jpg");
-    //         let mut frame: &mut frame::Frame = g.deref_mut();
-    //         set_image(&state, frame, &path).unwrap();
-    //         println!("Label updated to: {}", g.label());
-    //         //g.redraw();
-    //         //g.parent().unwrap().redraw();
-    //         //g.parent().unwrap().parent().unwrap().redraw();
-    //         Ok(())
-    //     })
-    //     .unwrap();
-    // last_frame.last_frame.set_label("changed");
-
-    // BLOCK UNTIL CLOSED:
+    // BLOCKS UNTIL CLOSED:
     while a.wait() {
         if let Some(msg) = receiver.recv() {
             match msg {
                 Message::RenderBelow(pos) => {
                     state.scroll_pos = pos;
-                    state.calc_visible();
-                    println!("TODO: Calculate rendering from ypos {}", pos);
+                    let (first_visible_image, last_visible_image) = state.calc_visible();
+                    let imgs2show = &state.img_frames
+                        [(first_visible_image as usize)..(last_visible_image as usize)];
+                    load_missing_images(&state, imgs2show);
                 }
             }
         }
@@ -323,23 +315,30 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-// struct State {
-//     thumb_size: i32,
-//     per_row: i32,
-//     image_paths: Option<Vec<PathBuf>>,
-//     row_height: i32,
-//     total_height: i32,
-//     visible_rows: (i32, i32),
-//     img_frames: Vec<Arc<Mutex<frame::Frame>>>,
-// }
-
-// FIXME: BREAK OFF POINT IS TOO LATE
-// (row_height: 220)
-// Only when viewing rows 2+3 and a bit (ie 0+1 off screen) does vis. rows change:
-// ypos 432 => calc_visible: rows 0 -> 2, imgs 0 -> 8
-// ypos 448 => calc_visible: rows 1 -> 3, imgs 3 -> 11
-//       => top 2 rows hidden (2*220), 2.x more rows visible <=> `rows 1 -> 3` is off
-//       => ??? why not change at 221 ???
+fn load_missing_images(state: &State, imgs2show: &[ImageDisplayCont]) -> anyhow::Result<()> {
+    for img_cont in imgs2show {
+        let path = &img_cont.image_path;
+        img_cont
+            .frame
+            .lock()
+            .and_then(|mut frame| {
+                let frame = &mut frame.deref_mut();
+                if frame.image().is_none() {
+                    println!("Setting missing image for {}", path.display());
+                    set_image(&state, frame, &path).unwrap(); // TODO Handle err better
+                }
+                Ok(())
+            })
+            .map_err(|err| {
+                anyhow::anyhow!(
+                    "Lock on a frame for {} is poisoned: {}",
+                    path.display(),
+                    err
+                )
+            })?;
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
