@@ -7,7 +7,7 @@ My project to learn Rust - an image manager GUI.
   - [x] Scrollbar
   - [x] (Pre-)render more images as the user is scrolling (start w/ an empty frame / loading icon - eg. `@refresh`) & consider garbage collecting those off screen
     - Make smoother
-    - Do async so UI thread not blocked
+    - [x] Do async so UI thread not blocked
     - Show that the images are being loaded
 - [ ] Resize the window => recalc. rows
 - [ ] Display an image
@@ -59,6 +59,13 @@ Alternatives:
  * How to pass pre-loaded image to the app? => Sandbox -> Application & use Flags
  * Image not rendering => incompatible versions of `image` create between me and iced-wgpu => use theirs
  * Image display window having unexpected horizontal margin - b/c the image was auto-scaled to fit into the display that is smaller than them image but the width that was set to less than the physical screen width was left as it was => find out the phys. size and scale the window manually 
+
+# Dev
+
+## VS Code
+
+* _Tasks: Run Build Task_ <-> `.vscode/tasks.json`
+* Run/Debug: In `main.rs` use the `▶ Run|Debug` decoration above the main / the corresponding icons on the Mac touch bar
 
  ---
 
