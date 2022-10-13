@@ -2,7 +2,7 @@
  *
  * - [x] I see "Setting new image..." yet the frame shows only the name, no img - missing render??
  *       - adding .parent.redraw() seems to have fixed it (redrawing the whole row)
- * - [ ] Bug: Jump to last row => 1) only it and not the 2 above show imgs, 2) not the whole last row is in viewport
+ * - [x] Bug: Jump to last row => 1) only it and not the 2 above show imgs, 2) not the whole last row is in viewport
  *            - FIXME When I jump to the end, it shows 5 imgs are visible but the last one is never loaded
  * - [ ] Bug: Sometimes img displays only partially - failed re-rendering trigger x timing??
  *            => add .parent.redraw on double-click and self.redraw on single click or st. to test?
@@ -394,7 +394,7 @@ async fn main() -> anyhow::Result<()> {
                         last_visible_image
                     ));
                     let imgs2show = &state.img_frames
-                        [(first_visible_image as usize)..(last_visible_image as usize)];
+                        [(first_visible_image as usize)..=(last_visible_image as usize)];
                     load_missing_images(&state, imgs2show).unwrap(); // TODO Handle errors better
                 }
             }
